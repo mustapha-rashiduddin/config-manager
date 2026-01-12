@@ -12,7 +12,7 @@ echo 'return "'$THEME'"' > ~/.config/nvim/theme.lua
 
 # 2. Update Ghostty Config
 # Uses --follow-symlinks so it doesn't break your Stow setup
-sed --follow-symlinks -i "s|^config-file = theme_colors_.*|config-file = theme_colors_$THEME|" ~/.config/ghostty/config
+sed --follow-symlinks -i "s|^config-file = theme_colors_.*|config-file = theme_colors_$THEME|" ~/.config/ghostty/theme_colors
 
 # 3. Force Ghostty Reload (Ctrl + Shift + ,)
 #echo "Reloading Ghostty..."
