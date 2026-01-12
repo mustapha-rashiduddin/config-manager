@@ -27,5 +27,3 @@ elif command -v xdotool >/dev/null 2>&1; then
 else
     echo "Warning: Could not reload Ghostty. Install 'wtype' (Wayland) or 'xdotool' (X11)."
 fi
-
-# echo "Switched System to $THEME"
