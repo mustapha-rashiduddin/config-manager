@@ -19,6 +19,16 @@ case "$THEME" in
                 printf '%s\n' "${ST_BG#\#}" > "$HOME/.config/config-manager/current-st-bg"
             fi
         fi
+
+        # 3. Update Emacs theme (ef-light / ef-dark), applied immediately if open
+        EMACS_THEME="ef-$THEME"
+        EMACS_DB="$HOME/emacs-speed-dial/speed-dial.sqlite"
+        if [ -f "$EMACS_DB" ] && command -v sqlite3 >/dev/null 2>&1; then
+            sqlite3 "$EMACS_DB" "INSERT OR REPLACE INTO state (key, value) VALUES ('ef_theme', '$EMACS_THEME');" 2>/dev/null
+        fi
+        if command -v emacsclient >/dev/null 2>&1; then
+            emacsclient -e "(progn (mapc #'disable-theme custom-enabled-themes) (load-theme '$EMACS_THEME t))" >/dev/null 2>&1
+        fi
         ;;
 
     clight|cdark)
