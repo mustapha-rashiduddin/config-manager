@@ -2,11 +2,11 @@
 """Recolor every running st window to the given fg/bg via OSC 10/11/12.
 
 st (>= 0.9) handles these dynamic-color OSC sequences natively and redraws
-live. We deliver them by writing to each st shell's controlling pty. A window
-is only touched when its foreground process group is the shell itself, so we
-never disturb a foreground program running inside the terminal. Echo is
-disabled for the write and the input buffer is cleared with the VKILL char so
-no OSC cruft leaks into the shell's command line.
+live. We deliver them by writing to each st shell's controlling pty on the
+*output* path (the slave /dev/pts/N). Bytes written to the slave are parsed by
+st as output and can never be read as input by whatever program is in the
+foreground, so recoloring a window mid-app (nvim, litecli, erd, ...) is safe
+and applies instantly to transparent-background apps.
 
 Usage: st-theme.py <foreground hex> <background hex>
 """
@@ -26,34 +26,6 @@ def child_pids(pid: int) -> list[int]:
 def st_pids() -> list[int]:
     out = subprocess.run(["pgrep", "-x", "st"], capture_output=True, text=True)
     return [int(x) for x in out.stdout.split()]
-
-
-def foreground_pgid(shell: int) -> int | None:
-    out = subprocess.run(["ps", "-o", "tpgid=", "-p", str(shell)],
-                         capture_output=True, text=True)
-    value = out.stdout.strip()
-    try:
-        return int(value)
-    except ValueError:
-        return None
-
-
-def has_foreign_foreground(shell: int) -> bool:
-    """True when some unrelated program owns the terminal.
-
-    The window can be safely recolored when the foreground app is either the
-    idle shell itself or our own theme job (i.e. the user just ran
-    `theme light/dark` in that window). Only a third-party foreground program
-    (vim, ssh, less, ...) makes us back off.
-    """
-    fg = foreground_pgid(shell)
-    if fg is None:
-        return False
-    if fg == os.getpgid(shell):
-        return False
-    if fg == os.getpgrp():
-        return False
-    return True
 
 
 def recolor(tty: str, seq: bytes) -> None:
@@ -87,8 +59,6 @@ def main() -> int:
         except OSError:
             continue
         if not tty.startswith("/dev/pts/"):
-            continue
-        if has_foreign_foreground(shell):
             continue
         recolor(tty, osc)
         changed += 1
