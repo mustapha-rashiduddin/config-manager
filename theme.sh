@@ -14,6 +14,9 @@ case "$THEME" in
             ST_BG=$(sed -n 's/^background *= *//p' "$ST_THEME" | tail -1)
             if [ -n "$ST_FG" ] && [ -n "$ST_BG" ]; then
                 python3 "$HOME/.config/config-manager/st-theme.py" "$ST_FG" "$ST_BG"
+                # Persist so new st windows start with this theme.
+                printf '%s\n' "${ST_FG#\#}" > "$HOME/.config/config-manager/current-st-fg"
+                printf '%s\n' "${ST_BG#\#}" > "$HOME/.config/config-manager/current-st-bg"
             fi
         fi
         ;;
