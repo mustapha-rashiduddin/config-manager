@@ -20,8 +20,11 @@ case "$THEME" in
             fi
         fi
 
-        # 3. Update Emacs theme (ef-light / ef-dark), applied immediately if open
-        EMACS_THEME="ef-$THEME"
+        # 3. Update Emacs theme, applied immediately if open
+        case "$THEME" in
+            light) EMACS_THEME="ef-day" ;;
+            dark)  EMACS_THEME="ef-cherie" ;;
+        esac
         EMACS_DB="$HOME/emacs-speed-dial/speed-dial.sqlite"
         if [ -f "$EMACS_DB" ] && command -v sqlite3 >/dev/null 2>&1; then
             sqlite3 "$EMACS_DB" "INSERT OR REPLACE INTO state (key, value) VALUES ('ef_theme', '$EMACS_THEME');" 2>/dev/null
