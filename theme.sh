@@ -27,3 +27,20 @@ elif command -v xdotool >/dev/null 2>&1; then
 else
     echo "Warning: Could not reload Ghostty. Install 'wtype' (Wayland) or 'xdotool' (X11)."
 fi
+
+# 4. Update DBeaver Theme
+DBV_PREFS="$HOME/.local/share/DBeaverData/workspace6/.metadata/.plugins/org.eclipse.core.runtime/.settings/org.eclipse.e4.ui.css.swt.theme.prefs"
+
+if [ -f "$DBV_PREFS" ]; then
+    if [ "$THEME" = "dark" ]; then
+        DBV_ID="org.eclipse.e4.ui.css.theme.e4_dark"
+    else
+        DBV_ID="org.eclipse.e4.ui.css.theme.e4_default"
+    fi
+    
+    # Target ONLY the line starting with 'themeid=' 
+    # This leaves 'eclipse.preferences.version=1' untouched.
+    sed -i "s/^themeid=.*/themeid=$DBV_ID/" "$DBV_PREFS"
+fi
+
+
