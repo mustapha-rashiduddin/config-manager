@@ -53,7 +53,13 @@ def load_palette(path: str) -> tuple[dict[int, str], str, str, str]:
     colors: dict[int, str] = {}
     named: dict[str, str] = {}
 
-    with open(path) as fh:
+    try:
+        fh = open(path)
+    except OSError as e:
+        print(f"st-theme: cannot read palette {path}: {e}", file=sys.stderr)
+        raise SystemExit(1) from None
+
+    with fh:
         for raw in fh:
             line = raw.strip()
             if not line or line.startswith("#"):
@@ -63,13 +69,18 @@ def load_palette(path: str) -> tuple[dict[int, str], str, str, str]:
             value = value.strip().lstrip("#")
             if not re.fullmatch(r"[0-9a-fA-F]{6}", value):
                 continue
-            if key.startswith("color"):
-                colors[int(key[len("color"):])] = value.lower()
+            if key.startswith("color") and key[5:].isdigit():
+                colors[int(key[5:])] = value.lower()
             else:
                 named[key] = value.lower()
 
     if sorted(colors) != list(range(16)):
         print(f"st-theme: {path}: need color0..color15, got {len(colors)}", file=sys.stderr)
+        raise SystemExit(1)
+
+    missing = [k for k in ("foreground", "background", "cursor") if k not in named]
+    if missing:
+        print(f"st-theme: {path}: missing {', '.join(missing)}", file=sys.stderr)
         raise SystemExit(1)
 
     return colors, named["foreground"], named["background"], named["cursor"]
@@ -86,7 +97,7 @@ def main() -> int:
     osc = "".join(f"\x1b]4;{i};#{value}\x07" for i, value in sorted(colors.items()))
     # OSC 10 fg, 11 bg, 12 cursor, then \x15 to repaint.
     osc += f"\x1b]11;#{bg}\x07\x1b]10;#{fg}\x07\x1b]12;#{cursor}\x07\x15"
-    seq = osc.encode()
+    osc = osc.encode()
 
     changed = 0
     for stpid in st_pids():
