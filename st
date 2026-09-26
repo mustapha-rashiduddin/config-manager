@@ -1,14 +1,24 @@
 #!/bin/sh
 # st wrapper: launch the real st, then apply the persisted theme once the
 # new window's shell is idle (so st-theme.py can flush the OSC reliably).
+# The palette lives in st_colors_<theme>; OSC 4 swaps the ANSI colors and
+# OSC 10/11/12 swap fg/bg/cursor.
 REAL_ST=$(command -v st)
-FFG="$HOME/.config/config-manager/current-st-fg"
-FBG="$HOME/.config/config-manager/current-st-bg"
+CM="$HOME/.config/config-manager"
+FTHEME="$CM/current-st-theme"
 
 "$REAL_ST" "$@" &
 ST_PID=$!
 
-if [ -s "$FFG" ] && [ -s "$FBG" ]; then
+PALETTE=""
+if [ -s "$FTHEME" ]; then
+    theme=$(cat "$FTHEME" 2>/dev/null)
+    case "$theme" in
+        light|dark) [ -f "$CM/st_colors_$theme" ] && PALETTE="$CM/st_colors_$theme" ;;
+    esac
+fi
+
+if [ -n "$PALETTE" ]; then
     (
         i=0
         while [ "$i" -lt 60 ]; do
@@ -21,7 +31,7 @@ if [ -s "$FFG" ] && [ -s "$FBG" ]; then
             fi
             i=$((i + 1))
         done
-        python3 "$HOME/.config/config-manager/st-theme.py" "$(cat "$FFG")" "$(cat "$FBG")"
+        python3 "$CM/st-theme.py" "$PALETTE"
     ) &
 fi
 

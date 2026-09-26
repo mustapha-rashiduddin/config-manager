@@ -7,14 +7,16 @@ case "$THEME" in
         # 1. Update Neovim
         echo 'return "'$THEME'"' > ~/.config/nvim/theme.lua
 
-        # 2. Update every running st window (fg/bg/cursor via OSC 10/11/12)
+        # 2. Update every running st window. st-theme.py emits OSC 4 for the
+        # full ANSI palette plus OSC 10/11/12 for fg/bg/cursor.
         ST_THEME="$HOME/.config/config-manager/st_colors_$THEME"
         if [ -f "$ST_THEME" ]; then
             ST_FG=$(sed -n 's/^foreground *= *//p' "$ST_THEME" | tail -1)
             ST_BG=$(sed -n 's/^background *= *//p' "$ST_THEME" | tail -1)
             if [ -n "$ST_FG" ] && [ -n "$ST_BG" ]; then
-                python3 "$HOME/.config/config-manager/st-theme.py" "$ST_FG" "$ST_BG"
+                python3 "$HOME/.config/config-manager/st-theme.py" "$ST_THEME"
                 # Persist so new st windows start with this theme.
+                printf '%s\n' "$THEME" > "$HOME/.config/config-manager/current-st-theme"
                 printf '%s\n' "${ST_FG#\#}" > "$HOME/.config/config-manager/current-st-fg"
                 printf '%s\n' "${ST_BG#\#}" > "$HOME/.config/config-manager/current-st-bg"
             fi

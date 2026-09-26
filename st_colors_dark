@@ -1,2 +1,23 @@
-foreground = #ffaf00
-background = #000000
+# COSMIC Terminal "COSMIC Dark" -- the set cosmic-term actually renders with
+# app_theme=Dark. From cosmic_dark() in cosmic-term 1.0.0
+# (src/terminal_theme.rs); background is the Dark theme's background.base
+# (palette gray_1), which main.rs feeds to terminal::WINDOW_BG_COLOR.
+foreground = #c4c4c4
+background = #1b1b1b
+cursor = #c4c4c4
+color0 = #1b1b1b
+color1 = #f16161
+color2 = #7cb987
+color3 = #ddc74c
+color4 = #6296be
+color5 = #be6dee
+color6 = #49bac8
+color7 = #bebebe
+color8 = #808080
+color9 = #ff8985
+color10 = #97d5a0
+color11 = #fae365
+color12 = #7db1da
+color13 = #d68eff
+color14 = #49bac8
+color15 = #c4c4c4
