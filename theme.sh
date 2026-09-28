@@ -34,6 +34,11 @@ case "$THEME" in
         if [ "${EMACS_APPLY:-1}" != "0" ] && command -v emacsclient >/dev/null 2>&1; then
             emacsclient -e "(progn (mapc #'disable-theme custom-enabled-themes) (load-theme '$EMACS_THEME t))" >/dev/null 2>&1
         fi
+
+        # 4. Update Dark Reader in any running loadout Chrome profiles.
+        if [ -x "$HOME/.config/i3/loadout.py" ]; then
+            "$HOME/.config/i3/loadout.py" chrome-theme "$THEME"
+        fi
         ;;
 
     clight|cdark)
