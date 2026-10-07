@@ -7,6 +7,22 @@ case "$THEME" in
         # 1. Update Neovim
         echo 'return "'$THEME'"' > ~/.config/nvim/theme.lua
 
+        # 1b. Update Helix. Helix has no include directive, so rewrite the
+        # top-level theme line in config.toml. acme is light, amberwood dark.
+        HX_THEME=amberwood
+        [ "$THEME" = light ] && HX_THEME=acme
+        HX_CONFIG="$HOME/.config/helix/config.toml"
+        if [ -f "$HX_CONFIG" ]; then
+            sed --follow-symlinks -i \
+                "s|^theme *= *\"[^\"]*\"|theme = \"$HX_THEME\"|" "$HX_CONFIG"
+        fi
+        # Repaint every running Helix immediately. SIGUSR1 makes Helix re-read
+        # config.toml and apply the new theme live (book/src/configuration.md).
+        # This is why no remote-control channel is needed: the file we just
+        # rewrote above is the single source of truth, and the signal tells
+        # each running instance to reload it.
+        pkill -USR1 -x hx 2>/dev/null && echo "hx: signalled to reload theme" || true
+
         # 2. Update every running st window. st-theme.py emits OSC 4 for the
         # full ANSI palette plus OSC 10/11/12 for fg/bg/cursor.
         ST_THEME="$HOME/.config/config-manager/st_colors_$THEME"
