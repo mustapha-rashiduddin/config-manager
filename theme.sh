@@ -55,6 +55,72 @@ case "$THEME" in
         if [ -x "$HOME/.config/i3/loadout.py" ]; then
             "$HOME/.config/i3/loadout.py" chrome-theme "$THEME"
         fi
+
+        # 5. Nautilus, and every other libadwaita app.
+        #
+        # Unlike st there is nothing to inject and no wrapper to install. The
+        # theme is just the desktop color scheme, which splits persistence and
+        # live-update for free: dconf keeps the value, so a window opened later
+        # already inherits it, and libadwaita watches the key, so windows
+        # already running repaint on their own. That is why this step has no
+        # sidecar script and no current-nautilus-theme file -- gsettings is both
+        # the knob and the record of what it was last set to.
+        #
+        # Verified against Nautilus 49.4 (GTK4/libadwaita): the repaint lands in
+        # about a second, in both directions, with no restart.
+        case "$THEME" in
+            dark)  SCHEME='prefer-dark' ;;
+            light) SCHEME='prefer-light' ;;
+        esac
+        if command -v gsettings >/dev/null 2>&1; then
+            if gsettings set org.gnome.desktop.interface color-scheme "$SCHEME"; then
+                echo "nautilus: color-scheme -> $SCHEME"
+            fi
+        fi
+
+        # 6. Icon theme, for the icons color-scheme cannot reach.
+        #
+        # GTK4 picks the icon theme from Net/IconThemeName over XSettings and
+        # from nowhere else -- org.gnome.desktop.icons is not in
+        # gsettings-desktop-schemas, and gtk-4.0/settings.ini plus a
+        # -gtk-icontheme rule are both ignored. So xsettingsd has to be running
+        # (i3 autostarts it against this very file), and flipping the theme is
+        # a config rewrite plus SIGHUP: the same shape as the Helix step above.
+        #
+        # There is no stock dark folder to switch to. breeze-dark's folder is
+        # byte-identical to breeze's (#3daee9) and Papirus-Dark's to Papirus's
+        # (#5294e2); dark variants only recolour symbolic icons, which GTK
+        # already adapts by itself. So `dark` selects AdwaitaDark, a generated
+        # theme that keeps Adwaita everywhere and darkens the coloured icons
+        # under scalable/places. `light` goes back to stock Adwaita.
+        CM="$HOME/.config/config-manager"
+        if [ "$THEME" = dark ]; then
+            DARK_THEME=AdwaitaDark
+            # Regenerate when missing, or when a GTK/Adwaita upgrade has moved
+            # the source art on, so we never sit on icons that no longer exist.
+            GEN="$CM/dark-icons.py"
+            # Must match where dark-icons.py writes, which prefers
+            # XDG_DATA_HOME over ~/.local/share.
+            DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
+            OUT="$DATA_HOME/icons/AdwaitaDark/index.theme"
+            SRC=$(ls -d /run/current-system/sw/share/icons/Adwaita/index.theme 2>/dev/null)
+            if [ -f "$GEN" ] && { [ ! -f "$OUT" ] ||
+                { [ -n "$SRC" ] && [ "$SRC" -nt "$OUT" ]; }; }; then
+                python3 "$GEN" || true
+            fi
+        else
+            DARK_THEME=Adwaita
+        fi
+
+        XS="$CM/xsettingsd.conf"
+        mkdir -p "$CM"
+        printf 'Net/IconThemeName "%s"\n' "$DARK_THEME" > "$XS"
+        if pgrep -x xsettingsd >/dev/null 2>&1; then
+            pkill -HUP -x xsettingsd 2>/dev/null \
+                && echo "nautilus: icon theme -> $DARK_THEME (xsettingsd signalled)"
+        else
+            echo "nautilus: icon theme -> $DARK_THEME written to $XS, but xsettingsd is not running (reboot or start it by hand)" >&2
+        fi
         ;;
 
     clight|cdark)
