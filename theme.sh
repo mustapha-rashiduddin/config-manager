@@ -8,9 +8,10 @@ case "$THEME" in
         echo 'return "'$THEME'"' > ~/.config/nvim/theme.lua
 
         # 1b. Update Helix. Helix has no include directive, so rewrite the
-        # top-level theme line in config.toml. acme is light, amberwood dark.
+        # top-level theme line in config.toml. modus_operandi is light,
+        # amberwood dark.
         HX_THEME=amberwood
-        [ "$THEME" = light ] && HX_THEME=acme
+        [ "$THEME" = light ] && HX_THEME=modus_operandi
         HX_CONFIG="$HOME/.config/helix/config.toml"
         if [ -f "$HX_CONFIG" ]; then
             sed --follow-symlinks -i \
