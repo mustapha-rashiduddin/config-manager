@@ -75,8 +75,10 @@ with open(path, "w") as fh:
 
 BEFORE=$(read_mode)
 
-# Persist for the next opencode, whether or not one is running to switch now.
-write_mode
+if [ "$BEFORE" = "$MODE" ]; then
+    echo "opencode-theme: already $MODE." >&2
+    exit 0
+fi
 
 # Locate xdotool. home.nix lists it, but this has to keep working between
 # "home.nix edited" and "nixos-rebuild switch" -- and quietly doing only the
@@ -97,11 +99,6 @@ if [ -z "$XD" ] || [ ! -x "$XD" ]; then
     echo "opencode-theme: xdotool not found; live switch skipped." >&2
     echo "opencode-theme: run 'sudo nixos-rebuild switch --flake .#saif-thinkpad'." >&2
     exit 1
-fi
-
-if [ "$BEFORE" = "$MODE" ]; then
-    echo "opencode-theme: already $MODE." >&2
-    exit 0
 fi
 
 switched=0
@@ -130,26 +127,43 @@ for stpid in $(pgrep -x st 2>/dev/null); do
 
     # Everything below is addressed to this window id; nothing here touches the
     # focus or the workspace the user is actually looking at.
-    "$XD" key --window "$wid" --clearmodifiers ctrl+p
-    sleep 0.9
-    # Clear whatever the palette was last filtered by, so our word is the only
-    # one in the box.
-    "$XD" key --window "$wid" --clearmodifiers ctrl+u
-    sleep 0.2
-    "$XD" type --window "$wid" --clearmodifiers --delay 60 "$MODE"
-    sleep 0.9
-    "$XD" key --window "$wid" --clearmodifiers Return
-    sleep 1.2
+    # Two attempts. ctrl+p reliably opens the palette when it is closed and is
+    # harmless when it is already open, so a miss here is a transient one --
+    # opencode mid-render, say -- and a second try costs a second.
+    ok=""
+    for attempt in 1 2; do
+        "$XD" key --window "$wid" --clearmodifiers ctrl+p
+        sleep 1.0
+        # Clear whatever the palette was last filtered by, so our word is the
+        # only one in the box.
+        "$XD" key --window "$wid" --clearmodifiers ctrl+u
+        sleep 0.3
+        "$XD" type --window "$wid" --clearmodifiers --delay 80 "$MODE"
+        sleep 1.0
+        "$XD" key --window "$wid" --clearmodifiers Return
+        sleep 1.3
 
-    # opencode rewrites theme_mode itself when the command runs. If it did not
-    # change, Return matched nothing and the palette is still open -- which is
-    # the one case where Escape is the right key rather than an interrupt.
-    if [ "$(read_mode)" = "$MODE" ]; then
+        # opencode rewrites theme_mode itself when the command runs, and nothing
+        # else writes it during this loop -- so this reading is genuinely
+        # opencode telling us it switched, not us agreeing with ourselves.
+        if [ "$(read_mode)" = "$MODE" ]; then
+            ok=1
+            break
+        fi
+
+        # It did not switch, so Return matched nothing: either the palette never
+        # opened, or it opened already filtered to a mode that is not on offer.
+        # Escape is right here precisely because we know Return did not act --
+        # if it had, we would be in the success branch. When no palette is up
+        # Escape is "interrupt", which is the mild version of this failure.
+        "$XD" key --window "$wid" --clearmodifiers Escape
+        sleep 0.6
+        [ "$attempt" = 2 ] || sleep 0.5
+    done
+
+    if [ -n "$ok" ]; then
         switched=$((switched + 1))
     else
-        "$XD" key --window "$wid" --clearmodifiers Escape
-        sleep 0.4
-        write_mode
         failed=$((failed + 1))
     fi
 done
@@ -157,9 +171,16 @@ done
 if [ "$switched" -gt 0 ]; then
     echo "opencode-theme: switched $switched opencode window(s) to $MODE." >&2
 fi
-if [ "$failed" -gt 0 ]; then
-    echo "opencode-theme: $failed opencode window(s) did not offer a switch to $MODE." >&2
-fi
 if [ "$switched" -eq 0 ] && [ "$failed" -eq 0 ]; then
+    # Nothing was running to switch, so kv.json is all that is left to do.
+    write_mode
     echo "opencode-theme: no running opencode; kv.json set to $MODE for the next one." >&2
+fi
+if [ "$failed" -gt 0 ]; then
+    # Say plainly that the live switch did not happen. The theme change itself is
+    # still correct for the next opencode, but claiming success here is what
+    # let a failure look like a pass.
+    write_mode
+    echo "opencode-theme: FAILED to switch $failed window(s); they are still on $BEFORE." >&2
+    echo "opencode-theme: kv.json set to $MODE, so the next opencode starts there." >&2
 fi
