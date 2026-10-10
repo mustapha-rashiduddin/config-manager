@@ -56,6 +56,17 @@ case "$THEME" in
                 # already running, and writes kv.json for the ones started
                 # later. Briefly borrows X focus; see the script.
                 "$HOME/.config/config-manager/opencode-theme.sh" "$THEME"
+
+                # 2e. Re-assert the terminal colours after opencode has switched.
+                # A TUI that themes itself commonly sets the terminal cursor
+                # colour from its own palette (OSC 12), and that lands *after*
+                # the sweep above, so opencode's window ends up with opencode's
+                # idea of the cursor rather than ours -- which shows up as a
+                # dark cursor on a dark background in the shell that opencode
+                # hands back to on quit. Writing last wins; it costs one more
+                # sweep and nothing depends on the palette being applied only
+                # once.
+                python3 "$HOME/.config/config-manager/st-theme.py" "$ST_THEME"
             fi
         fi
 
