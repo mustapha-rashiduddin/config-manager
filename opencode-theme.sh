@@ -51,11 +51,26 @@ esac
 STATE="$HOME/.local/state/opencode/kv.json"
 
 read_mode() {
-    python3 -c 'import json,sys
-try:
-    print(json.load(open(sys.argv[1])).get("theme_mode", ""))
-except Exception:
-    print("")' "$STATE" 2>/dev/null
+    # grep rather than python3: this is called on every poll below, and an
+    # interpreter start is ~50-100ms, which used to cost more than the switch
+    # itself. Tolerant of spacing and of the value sitting anywhere in the file.
+    v=$(grep -o '"theme_mode"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE" 2>/dev/null | head -1)
+    [ -n "$v" ] || return 0
+    printf '%s' "$v" | sed 's/.*"\([a-z]*\)"$/\1/'
+}
+
+# Poll for opencode to report the new mode instead of sleeping a fixed guess.
+# The switch itself lands in well under a tenth of a second, so a fixed wait was
+# spending almost all of its time waiting for something that had already
+# happened.
+wait_for_mode() {
+    i=0
+    while [ "$i" -lt 200 ]; do
+        [ "$(read_mode)" = "$1" ] && return 0
+        sleep 0.01
+        i=$((i + 1))
+    done
+    return 1
 }
 
 write_mode() {
@@ -129,24 +144,28 @@ for stpid in $(pgrep -x st 2>/dev/null); do
     # focus or the workspace the user is actually looking at.
     # Two attempts. ctrl+p reliably opens the palette when it is closed and is
     # harmless when it is already open, so a miss here is a transient one --
-    # opencode mid-render, say -- and a second try costs a second.
+    # opencode mid-render, say -- and a second try costs almost nothing.
     ok=""
     for attempt in 1 2; do
+        # 20ms was measured as enough for the palette to mount and take the
+        # focus; the old 1s was a guess, and guessing high is what made this
+        # look like it was waiting on a person. Sending faster than the palette
+        # can mount is what puts text in the prompt, so this is the one delay
+        # worth being careful with.
         "$XD" key --window "$wid" --clearmodifiers ctrl+p
-        sleep 1.0
+        sleep 0.05
         # Clear whatever the palette was last filtered by, so our word is the
         # only one in the box.
         "$XD" key --window "$wid" --clearmodifiers ctrl+u
-        sleep 0.3
-        "$XD" type --window "$wid" --clearmodifiers --delay 80 "$MODE"
-        sleep 1.0
+        sleep 0.03
+        "$XD" type --window "$wid" --clearmodifiers --delay 0 "$MODE"
+        sleep 0.05
         "$XD" key --window "$wid" --clearmodifiers Return
-        sleep 1.3
 
         # opencode rewrites theme_mode itself when the command runs, and nothing
         # else writes it during this loop -- so this reading is genuinely
         # opencode telling us it switched, not us agreeing with ourselves.
-        if [ "$(read_mode)" = "$MODE" ]; then
+        if wait_for_mode "$MODE"; then
             ok=1
             break
         fi
@@ -157,8 +176,7 @@ for stpid in $(pgrep -x st 2>/dev/null); do
         # if it had, we would be in the success branch. When no palette is up
         # Escape is "interrupt", which is the mild version of this failure.
         "$XD" key --window "$wid" --clearmodifiers Escape
-        sleep 0.6
-        [ "$attempt" = 2 ] || sleep 0.5
+        sleep 0.2
     done
 
     if [ -n "$ok" ]; then
