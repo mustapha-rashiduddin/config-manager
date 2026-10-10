@@ -172,11 +172,21 @@ for stpid in $(pgrep -x st 2>/dev/null); do
 
         # It did not switch, so Return matched nothing: either the palette never
         # opened, or it opened already filtered to a mode that is not on offer.
+        #
         # Escape is right here precisely because we know Return did not act --
         # if it had, we would be in the success branch. When no palette is up
         # Escape is "interrupt", which is the mild version of this failure.
         "$XD" key --window "$wid" --clearmodifiers Escape
         sleep 0.2
+
+        # ...and if the palette had in fact never opened, those keystrokes went
+        # into the prompt instead, where Return has already submitted them. There
+        # is no way to tell the two cases apart from here, so clear the line
+        # either way. This can wipe something the user typed in that window in
+        # the same instant, which is a far smaller loss than the alternative --
+        # a stray "light" or "dark" going to the model as a prompt.
+        "$XD" key --window "$wid" --clearmodifiers ctrl+u
+        sleep 0.15
     done
 
     if [ -n "$ok" ]; then
