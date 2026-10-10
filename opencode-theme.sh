@@ -49,6 +49,7 @@ case "$MODE" in
 esac
 
 STATE="$HOME/.local/state/opencode/kv.json"
+LOG="$HOME/.local/state/opencode/theme-switch.log"
 
 read_mode() {
     # grep rather than python3: this is called on every poll below, and an
@@ -89,8 +90,25 @@ with open(path, "w") as fh:
 }
 
 BEFORE=$(read_mode)
+START=$(date +%s%N)
+
+# One line per run, so a failure that only shows up later can be attributed
+# instead of guessed at. The interesting column is `via`: a switch that
+# succeeded on the second attempt means the first one leaked its keystrokes into
+# the prompt, because that is the attempt whose Return reached a palette that
+# was never open.
+log_run() {
+    {
+        printf '%s mode=%s before=%s after=%s via=%s windows=%s failed=%s ms=%s\n' \
+            "$(date +%H:%M:%S.%N | cut -c1-12)" "$MODE" "$BEFORE" "$(read_mode)" \
+            "${VIA:-?}" "${switched:-0}" "${failed:-0}" \
+            "$(( ($(date +%s%N) - START) / 1000000 ))"
+    } >> "$LOG" 2>/dev/null || true
+}
 
 if [ "$BEFORE" = "$MODE" ]; then
+    VIA="noop"
+    log_run
     echo "opencode-theme: already $MODE." >&2
     exit 0
 fi
@@ -167,8 +185,10 @@ for stpid in $(pgrep -x st 2>/dev/null); do
         # opencode telling us it switched, not us agreeing with ourselves.
         if wait_for_mode "$MODE"; then
             ok=1
+            VIA="attempt$attempt"
             break
         fi
+        VIA="attempt$attempt-failed"
 
         # It did not switch, so Return matched nothing: either the palette never
         # opened, or it opened already filtered to a mode that is not on offer.
@@ -194,6 +214,9 @@ for stpid in $(pgrep -x st 2>/dev/null); do
     else
         failed=$((failed + 1))
     fi
+    VIA="$VIA/$MODE"
+    log_run
+    VIA=
 done
 
 if [ "$switched" -gt 0 ]; then
