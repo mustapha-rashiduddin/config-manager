@@ -19,8 +19,14 @@
 # already highlighted, so Return is unambiguous -- nothing that breaks when the
 # palette gains other commands.
 #
-# The cost is focus: XTEST only reaches the focused window, so each opencode is
-# briefly raised and the previous focus is restored at the end. That is visible.
+# Keys go out as XSendEvent (xdotool --window), not XTEST. That distinction is
+# the whole ballgame. XTEST injects at the X server and can only ever reach
+# whatever holds focus, so switching a *background* opencode meant raising its
+# window and taking the keyboard for a second -- and if you were typing at the
+# time, the palette keystrokes landed in your shell. XSendEvent carries a target
+# window id, so st takes the KeyPress while sitting in the background, forwards
+# it to its pty exactly as if it had been typed, and opencode cannot tell the
+# difference. Nothing is raised and focus never moves.
 #
 # Two things this has to get right, both learned the hard way:
 #
@@ -98,8 +104,6 @@ if [ "$BEFORE" = "$MODE" ]; then
     exit 0
 fi
 
-PREV=$("$XD" getactivewindow 2>/dev/null || true)
-
 switched=0
 failed=0
 
@@ -124,18 +128,17 @@ for stpid in $(pgrep -x st 2>/dev/null); do
     wid=$("$XD" search --pid "$stpid" 2>/dev/null | head -1)
     [ -n "$wid" ] || continue
 
-    "$XD" windowactivate --sync "$wid" 2>/dev/null || continue
-    sleep 0.4
-
-    "$XD" key --clearmodifiers ctrl+p
+    # Everything below is addressed to this window id; nothing here touches the
+    # focus or the workspace the user is actually looking at.
+    "$XD" key --window "$wid" --clearmodifiers ctrl+p
     sleep 0.9
     # Clear whatever the palette was last filtered by, so our word is the only
     # one in the box.
-    "$XD" key --clearmodifiers ctrl+u
+    "$XD" key --window "$wid" --clearmodifiers ctrl+u
     sleep 0.2
-    "$XD" type --clearmodifiers --delay 60 "$MODE"
+    "$XD" type --window "$wid" --clearmodifiers --delay 60 "$MODE"
     sleep 0.9
-    "$XD" key --clearmodifiers Return
+    "$XD" key --window "$wid" --clearmodifiers Return
     sleep 1.2
 
     # opencode rewrites theme_mode itself when the command runs. If it did not
@@ -144,16 +147,12 @@ for stpid in $(pgrep -x st 2>/dev/null); do
     if [ "$(read_mode)" = "$MODE" ]; then
         switched=$((switched + 1))
     else
-        "$XD" key --clearmodifiers Escape
+        "$XD" key --window "$wid" --clearmodifiers Escape
         sleep 0.4
         write_mode
         failed=$((failed + 1))
     fi
 done
-
-if [ -n "$PREV" ]; then
-    "$XD" windowactivate --sync "$PREV" 2>/dev/null || true
-fi
 
 if [ "$switched" -gt 0 ]; then
     echo "opencode-theme: switched $switched opencode window(s) to $MODE." >&2
