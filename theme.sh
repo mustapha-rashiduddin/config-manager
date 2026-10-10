@@ -49,6 +49,13 @@ case "$THEME" in
                 mkdir -p "$ST_PALETTE_DIR"
                 cp "$ST_THEME" "$ST_PALETTE_DIR/.palette.tmp"
                 mv "$ST_PALETTE_DIR/.palette.tmp" "$ST_PALETTE_DIR/palette"
+
+                # 2d. opencode. It cannot hot-reload its theme config, so
+                # opencode-theme.sh drives its command palette ("Switch to
+                # dark mode" / "Switch to light mode") for every opencode
+                # already running, and writes kv.json for the ones started
+                # later. Briefly borrows X focus; see the script.
+                "$HOME/.config/config-manager/opencode-theme.sh" "$THEME"
             fi
         fi
 
