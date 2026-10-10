@@ -13,32 +13,44 @@
 # keystrokes into another process here is XTEST (TIOCSTI is disabled on this
 # box, so the usual ioctl trick is unavailable).
 #
-# What we drive: the command palette has a "Switch to dark mode" entry while
-# opencode is light, and "Switch to light mode" while it is dark. Filtering the
-# palette on the bare word "dark" or "light" leaves exactly that one entry,
-# already highlighted, so Return is unambiguous -- nothing that breaks when the
-# palette gains other commands.
+# How we drive it: one keystroke. config-manager/opencode/tui.json binds
+# theme_switch_mode to ctrl+shift+m, which flips light <-> dark. It defaults to
+# "none", so the binding is free by definition and cannot collide with anything.
+# ~/.config/opencode/tui.json is a symlink to it, because the two halves only
+# work together: without the binding this sends a key nothing is listening for
+# and quietly stops switching anything.
+#
+# That binding is the whole fix, and it is worth being explicit about why the
+# version it replaced was broken. The old code opened the command palette
+# (ctrl+p), typed the word "dark" into it, and pressed Return -- on the theory
+# that the palette would mount fast enough to swallow all of it. It usually
+# did. When it did not, "dark" went into the prompt instead of the palette box
+# and Return submitted it, so the LLM got a prompt reading "dark". Rare enough
+# to look like a ghost, frequent enough to keep happening: roughly 1 in 40.
+#
+# The shape of the bug is what makes it so unpleasant to fix in place. A single
+# keystroke bound to a command cannot leak, because there is no text to leak --
+# either it fires and the theme changes, or it does not and nothing at all
+# happens. No window exists in which stray characters could land, no Return that
+# could submit them, no Escape to send afterwards (which was itself risky, being
+# "interrupt" in opencode whenever no palette was up). The prompt is not
+# reachable from here at all, so the entire failure class is gone rather than
+# made less likely.
 #
 # Keys go out as XSendEvent (xdotool --window), not XTEST. That distinction is
-# the whole ballgame. XTEST injects at the X server and can only ever reach
-# whatever holds focus, so switching a *background* opencode meant raising its
-# window and taking the keyboard for a second -- and if you were typing at the
-# time, the palette keystrokes landed in your shell. XSendEvent carries a target
-# window id, so st takes the KeyPress while sitting in the background, forwards
-# it to its pty exactly as if it had been typed, and opencode cannot tell the
-# difference. Nothing is raised and focus never moves.
+# the second half of the whole ballgame. XTEST injects at the X server and can
+# only ever reach whatever holds focus, so switching a *background* opencode
+# meant raising its window and taking the keyboard for a second -- and if you
+# were typing at the time, the keystroke landed in your shell. XSendEvent
+# carries a target window id, so st takes the KeyPress while sitting in the
+# background, forwards it to its pty exactly as if it had been typed, and
+# opencode cannot tell the difference. Nothing is raised and focus never moves.
 #
-# Two things this has to get right, both learned the hard way:
-#
-#   * Only open the palette when the mode actually differs. The entry for the
-#     mode you are already in does not exist, so Return would do nothing and
-#     leave the palette sitting there, open, with your UI blocked behind it.
-#
-#   * Verify afterwards, and Escape if the switch did not take. Escape is
-#     "interrupt" in opencode when no palette is open, so it must only ever be
-#     sent while we are certain the palette is up. Re-reading kv.json tells us:
-#     opencode rewrites theme_mode itself when the command runs, so if it did
-#     not change, Return found nothing and the palette is still open.
+# The toggle is verified, not assumed. opencode rewrites theme_mode in kv.json
+# itself when the switch runs, so re-reading that file is opencode telling us it
+# switched rather than us agreeing with ourselves. If the mode does not move the
+# key was not received and we press again; if it moves to the *wrong* mode we
+# press again to come back. Neither case can put anything in the prompt.
 
 set -u
 
@@ -51,10 +63,29 @@ esac
 STATE="$HOME/.local/state/opencode/kv.json"
 LOG="$HOME/.local/state/opencode/theme-switch.log"
 
+# Pure bash, no forks. This runs inside the poll loop below, and it used to be
+# a `grep | sed` pipeline: three processes per iteration, so 200 iterations cost
+# around ten seconds of fork/exec rather than the two the comment claimed. On a
+# miss that delay was most of the script's runtime, and it is why a single failed
+# press took long enough to look like a hang.
+#
+# $(< file) is bash's fork-free whole-file read, and the regex is a builtin, so
+# this costs a single syscall where the pipeline cost three processes. It also
+# matches regardless of whether the value sits on its own line or inside a
+# single-line document, which the earlier line-at-a-time attempt got wrong: that
+# loop re-read the same line forever on a file with no match, hanging the script
+# outright. grep is kept as a fallback so the script still runs if /bin/sh ever
+# stops being bash.
 read_mode() {
-    # grep rather than python3: this is called on every poll below, and an
-    # interpreter start is ~50-100ms, which used to cost more than the switch
-    # itself. Tolerant of spacing and of the value sitting anywhere in the file.
+    [ -r "$STATE" ] || return 0
+    if [ -n "${BASH_VERSION:-}" ]; then
+        local content
+        content=$(< "$STATE")
+        if [[ $content =~ \"theme_mode\"[[:space:]]*:[[:space:]]*\"([a-z]+)\" ]]; then
+            printf '%s' "${BASH_REMATCH[1]}"
+        fi
+        return 0
+    fi
     v=$(grep -o '"theme_mode"[[:space:]]*:[[:space:]]*"[^"]*"' "$STATE" 2>/dev/null | head -1)
     [ -n "$v" ] || return 0
     printf '%s' "$v" | sed 's/.*"\([a-z]*\)"$/\1/'
@@ -63,10 +94,11 @@ read_mode() {
 # Poll for opencode to report the new mode instead of sleeping a fixed guess.
 # The switch itself lands in well under a tenth of a second, so a fixed wait was
 # spending almost all of its time waiting for something that had already
-# happened.
+# happened. Thirty rounds is about a second of real time and several times what a
+# healthy switch needs.
 wait_for_mode() {
     i=0
-    while [ "$i" -lt 200 ]; do
+    while [ "$i" -lt 30 ]; do
         [ "$(read_mode)" = "$1" ] && return 0
         sleep 0.01
         i=$((i + 1))
@@ -92,17 +124,24 @@ with open(path, "w") as fh:
 BEFORE=$(read_mode)
 START=$(date +%s%N)
 
-# One line per run, so a failure that only shows up later can be attributed
-# instead of guessed at. The interesting column is `via`: a switch that
-# succeeded on the second attempt means the first one leaked its keystrokes into
-# the prompt, because that is the attempt whose Return reached a palette that
-# was never open.
 log_run() {
     {
         printf '%s mode=%s before=%s after=%s via=%s windows=%s failed=%s ms=%s\n' \
             "$(date +%H:%M:%S.%N | cut -c1-12)" "$MODE" "$BEFORE" "$(read_mode)" \
             "${VIA:-?}" "${switched:-0}" "${failed:-0}" \
             "$(( ($(date +%s%N) - START) / 1000000 ))"
+    } >> "$LOG" 2>/dev/null || true
+}
+
+# One line per press. `noreply` means the mode never moved, so the keystroke was
+# not received and pressing again is free. `wrongway` means it was received and
+# toggled, just not to the mode asked for. Both are recoverable; neither can
+# have touched the prompt.
+log_attempt() {
+    {
+        printf '  press=%s mode=%s before=%s after=%s result=%s ms=%s\n' \
+            "$1" "$MODE" "$2" "$3" "$4" \
+            "$(( ($(date +%s%N) - press_start) / 1000000 ))"
     } >> "$LOG" 2>/dev/null || true
 }
 
@@ -160,53 +199,34 @@ for stpid in $(pgrep -x st 2>/dev/null); do
 
     # Everything below is addressed to this window id; nothing here touches the
     # focus or the workspace the user is actually looking at.
-    # Two attempts. ctrl+p reliably opens the palette when it is closed and is
-    # harmless when it is already open, so a miss here is a transient one --
-    # opencode mid-render, say -- and a second try costs almost nothing.
+    #
+    # One press should do it: BEFORE is known to differ from MODE and the
+    # binding is a pure toggle. The loop exists only to cover a keystroke that
+    # never arrived, which costs a re-press and nothing else.
     ok=""
-    for attempt in 1 2; do
-        # 20ms was measured as enough for the palette to mount and take the
-        # focus; the old 1s was a guess, and guessing high is what made this
-        # look like it was waiting on a person. Sending faster than the palette
-        # can mount is what puts text in the prompt, so this is the one delay
-        # worth being careful with.
-        "$XD" key --window "$wid" --clearmodifiers ctrl+p
-        sleep 0.05
-        # Clear whatever the palette was last filtered by, so our word is the
-        # only one in the box.
-        "$XD" key --window "$wid" --clearmodifiers ctrl+u
-        sleep 0.03
-        "$XD" type --window "$wid" --clearmodifiers --delay 0 "$MODE"
-        sleep 0.05
-        "$XD" key --window "$wid" --clearmodifiers Return
+    presses=0
+    while [ "$presses" -lt 3 ]; do
+        presses=$((presses + 1))
+        press_start=$(date +%s%N)
+        press_before=$(read_mode)
 
-        # opencode rewrites theme_mode itself when the command runs, and nothing
-        # else writes it during this loop -- so this reading is genuinely
-        # opencode telling us it switched, not us agreeing with ourselves.
+        "$XD" key --window "$wid" --clearmodifiers ctrl+shift+m
+
         if wait_for_mode "$MODE"; then
+            VIA="toggle$presses"
             ok=1
-            VIA="attempt$attempt"
+            log_attempt "$presses" "$press_before" "$(read_mode)" switched
             break
         fi
-        VIA="attempt$attempt-failed"
 
-        # It did not switch, so Return matched nothing: either the palette never
-        # opened, or it opened already filtered to a mode that is not on offer.
-        #
-        # Escape is right here precisely because we know Return did not act --
-        # if it had, we would be in the success branch. When no palette is up
-        # Escape is "interrupt", which is the mild version of this failure.
-        "$XD" key --window "$wid" --clearmodifiers Escape
-        sleep 0.2
-
-        # ...and if the palette had in fact never opened, those keystrokes went
-        # into the prompt instead, where Return has already submitted them. There
-        # is no way to tell the two cases apart from here, so clear the line
-        # either way. This can wipe something the user typed in that window in
-        # the same instant, which is a far smaller loss than the alternative --
-        # a stray "light" or "dark" going to the model as a prompt.
-        "$XD" key --window "$wid" --clearmodifiers ctrl+u
-        sleep 0.15
+        press_after=$(read_mode)
+        if [ "$press_after" = "$press_before" ]; then
+            VIA="toggle$presses-noreply"
+        else
+            VIA="toggle$presses-wrongway"
+        fi
+        log_attempt "$presses" "$press_before" "$press_after" \
+            "$([ "$press_after" = "$press_before" ] && echo noreply || echo wrongway)"
     done
 
     if [ -n "$ok" ]; then

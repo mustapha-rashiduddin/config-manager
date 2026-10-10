@@ -1,0 +1,6 @@
+{
+  "$schema": "https://opencode.ai/tui.json",
+  "keybinds": {
+    "theme_switch_mode": "ctrl+shift+m"
+  }
+}
