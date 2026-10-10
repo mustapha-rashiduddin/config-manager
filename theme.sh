@@ -56,6 +56,21 @@ case "$THEME" in
                 # already running, and writes kv.json for the ones started
                 # later. Briefly borrows X focus; see the script.
                 "$HOME/.config/config-manager/opencode-theme.sh" "$THEME"
+
+                # 2e. ...and then put the terminal back the way we want it.
+                #
+                # opencode emits its own colour sequences when it changes
+                # theme, and that lands *after* the sweep above, so it wins:
+                # type `light` and the background goes light, opencode goes
+                # light and overrides it straight back to dark. Type it again
+                # and this time opencode is already light, so nothing is
+                # injected and nothing overrides -- which is why the command
+                # appeared to need typing twice.
+                #
+                # Sweeping last makes our palette the final word. Costs one
+                # more OSC pass (~30ms); a theme switch is not latency-critical
+                # and nothing depends on it happening exactly once.
+                python3 "$HOME/.config/config-manager/st-theme.py" "$ST_THEME"
             fi
         fi
 
