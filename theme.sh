@@ -36,6 +36,19 @@ case "$THEME" in
                 printf '%s\n' "$THEME" > "$HOME/.config/config-manager/current-st-theme"
                 printf '%s\n' "${ST_FG#\#}" > "$HOME/.config/config-manager/current-st-fg"
                 printf '%s\n' "${ST_BG#\#}" > "$HOME/.config/config-manager/current-st-bg"
+
+                # 2c. Publish the palette where st reads it for itself at
+                # startup (st-palette.diff, /etc/nixos/users/saifr/). This is
+                # what actually fixes a freshly opened window: st allocates
+                # its first pixel from this file, so it is born in the current
+                # theme rather than flashing from the compiled-in colours
+                # before the OSC repaint above can reach it. Written via a
+                # temp file in the same directory so a terminal opening at
+                # this instant cannot read a half-written palette.
+                ST_PALETTE_DIR="$HOME/.config/st"
+                mkdir -p "$ST_PALETTE_DIR"
+                cp "$ST_THEME" "$ST_PALETTE_DIR/.palette.tmp"
+                mv "$ST_PALETTE_DIR/.palette.tmp" "$ST_PALETTE_DIR/palette"
             fi
         fi
 
