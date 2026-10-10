@@ -14,11 +14,17 @@
 # box, so the usual ioctl trick is unavailable).
 #
 # How we drive it: one keystroke. config-manager/opencode/tui.json binds
-# theme_switch_mode to ctrl+shift+m, which flips light <-> dark. It defaults to
+# theme_switch_mode to ctrl+alt+m, which flips light <-> dark. It defaults to
 # "none", so the binding is free by definition and cannot collide with anything.
 # ~/.config/opencode/tui.json is a symlink to it, because the two halves only
 # work together: without the binding this sends a key nothing is listening for
 # and quietly stops switching anything.
+#
+# ctrl+alt rather than ctrl+shift because that is the one chord that is actually
+# reachable: opencode's defaults already use ctrl+alt for k/y/e/u/d/g/b/f and for
+# the arrow and page keys, but nothing takes ctrl+alt+m. The layout here is plain
+# "us" with no AltGr remapping, so there is no ctrl+alt chord to collide with
+# either.
 #
 # That binding is the whole fix, and it is worth being explicit about why the
 # version it replaced was broken. The old code opened the command palette
@@ -210,7 +216,7 @@ for stpid in $(pgrep -x st 2>/dev/null); do
         press_start=$(date +%s%N)
         press_before=$(read_mode)
 
-        "$XD" key --window "$wid" --clearmodifiers ctrl+shift+m
+        "$XD" key --window "$wid" --clearmodifiers ctrl+alt+m
 
         if wait_for_mode "$MODE"; then
             VIA="toggle$presses"
